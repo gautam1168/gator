@@ -96,6 +96,24 @@ func handlerReset(s *state, cmd command) error {
 	return nil
 }
 
+func handlerGetUsers(s *state, cmd command) error {
+	users, err := s.db.GetUsers(s.ctx)
+	if err != nil {
+		log.Fatal("could not get users")
+	}
+
+	currentUserName := s.cfg.CurrentUserName
+	for i := 0; i < len(users); i++ {
+		user := users[i]
+		if user.Name == currentUserName {
+			fmt.Printf("%s (current)\n", user.Name)
+		} else {
+			fmt.Println(user.Name)
+		}
+	}
+	return nil
+}
+
 func main() {
 	cfg, err := config.Read()
 	if err != nil {
@@ -122,8 +140,9 @@ func main() {
 	cmds.register("login", handlerLogin)
 	cmds.register("register", handlerRegister)
 	cmds.register("reset", handlerReset)
+	cmds.register("users", handlerGetUsers)
 
-	fmt.Printf("current: %v", cfg)
+	// fmt.Printf("current: %v", cfg)
 
 	args := os.Args
 
