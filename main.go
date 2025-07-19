@@ -133,6 +133,26 @@ func handlerAddFeed(s *state, cmd command) error {
 	fmt.Printf("id:%v\nname: %v\nurl: %v\nuser_id:%v\n",
 		feed.ID, feed.Name, feed.Url, feed.UserID)
 
+	_, err = s.db.CreateFeedFollow(s.ctx, database.CreateFeedFollowParams{
+		ID: uuid.New(),
+		UserID: uuid.NullUUID{
+			Valid: true,
+			UUID:  user.ID,
+		},
+		FeedID: uuid.NullUUID{
+			Valid: true,
+			UUID:  feed.ID,
+		},
+		CreatedAt: sql.NullTime{
+			Valid: true,
+			Time:  time.Now(),
+		},
+		UpdatedAt: sql.NullTime{
+			Valid: true,
+			Time:  time.Now(),
+		},
+	})
+
 	return err
 }
 
@@ -142,10 +162,68 @@ func handlerFeeds(s *state, cmd command) error {
 		return err
 	}
 
-	for i := 0; i < len(feeds); i++ {
+	for i := range feeds {
 		feed := feeds[i]
 		fmt.Printf("%s, %s, %v\n", feed.Name.String, feed.Url.String, feed.UserName)
 	}
+	return nil
+}
+
+func handlerFollow(s *state, cmd command) error {
+	if len(cmd.args) < 1 {
+		log.Fatal("feed url must be provided")
+	}
+
+	user, err := s.db.GetUserByName(s.ctx, s.cfg.CurrentUserName)
+	if err != nil {
+		log.Fatal("cannot find the user")
+	}
+
+	feed, err := s.db.GetFeedByUrl(s.ctx, sql.NullString{
+		Valid:  true,
+		String: cmd.args[0],
+	})
+
+	if err != nil {
+		log.Fatal("cannot find the feed")
+	}
+
+	feedFollow, err := s.db.CreateFeedFollow(s.ctx, database.CreateFeedFollowParams{
+		ID: uuid.New(),
+		UserID: uuid.NullUUID{
+			Valid: true,
+			UUID:  user.ID,
+		},
+		FeedID: uuid.NullUUID{
+			Valid: true,
+			UUID:  feed.ID,
+		},
+		CreatedAt: sql.NullTime{
+			Valid: true,
+			Time:  time.Now(),
+		},
+		UpdatedAt: sql.NullTime{
+			Valid: true,
+			Time:  time.Now(),
+		},
+	})
+
+	fmt.Printf("%v", feedFollow)
+
+	return err
+}
+
+func handlerFollowing(s *state, cmd command) error {
+	follows, err := s.db.GetFeedFollowsForUser(s.ctx, s.cfg.CurrentUserName)
+	if err != nil {
+		return err
+	}
+
+	for i := range follows {
+		follow := follows[i]
+		fmt.Println(follow.FeedName)
+	}
+
 	return nil
 }
 
@@ -220,7 +298,7 @@ func handlerGetUsers(s *state, cmd command) error {
 	}
 
 	currentUserName := s.cfg.CurrentUserName
-	for i := 0; i < len(users); i++ {
+	for i := range users {
 		user := users[i]
 		if user.Name == currentUserName {
 			fmt.Printf("%s (current)\n", user.Name)
@@ -261,6 +339,8 @@ func main() {
 	cmds.register("agg", handlerAggregate)
 	cmds.register("addfeed", handlerAddFeed)
 	cmds.register("feeds", handlerFeeds)
+	cmds.register("follow", handlerFollow)
+	cmds.register("following", handlerFollowing)
 
 	// fmt.Printf("current: %v", cfg)
 
