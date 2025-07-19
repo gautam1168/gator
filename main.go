@@ -96,6 +96,46 @@ func handlerAggregate(s *state, cmd command) error {
 	return nil
 }
 
+func handlerAddFeed(s *state, cmd command) error {
+	if len(cmd.args) < 2 {
+		log.Fatalf("name and url must be provided")
+	}
+
+	name := cmd.args[0]
+	url := cmd.args[1]
+
+	user, err := s.db.GetUserByName(s.ctx, s.cfg.CurrentUserName)
+	if err != nil {
+		log.Fatal("cannot find the user")
+	}
+
+	feed, err := s.db.AddFeed(s.ctx, database.AddFeedParams{
+		ID: uuid.New(),
+		CreatedAt: sql.NullTime{
+			Valid: true,
+			Time:  time.Now(),
+		},
+		UpdatedAt: sql.NullTime{
+			Valid: true,
+			Time:  time.Now(),
+		},
+		Name: sql.NullString{
+			Valid:  true,
+			String: name,
+		},
+		Url: sql.NullString{
+			Valid:  true,
+			String: url,
+		},
+		UserID: user.ID,
+	})
+
+	fmt.Printf("id:%v\nname: %s\nurl: %s\nuser_id:%s\n",
+		feed.ID, feed.Name, feed.Url, feed.UserID)
+
+	return err
+}
+
 func (c *commands) run(s *state, cmd command) error {
 	if handler, ok := c.registry[cmd.name]; !ok {
 		return fmt.Errorf("invalid command")
@@ -206,6 +246,7 @@ func main() {
 	cmds.register("reset", handlerReset)
 	cmds.register("users", handlerGetUsers)
 	cmds.register("agg", handlerAggregate)
+	cmds.register("addfeed", handlerAddFeed)
 
 	// fmt.Printf("current: %v", cfg)
 
