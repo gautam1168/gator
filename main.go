@@ -3,8 +3,12 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/xml"
 	"fmt"
+	"html"
+	"io"
 	"log"
+	"net/http"
 	"os"
 
 	// "os"
@@ -30,6 +34,66 @@ type command struct {
 
 type commands struct {
 	registry map[string]func(*state, command) error
+}
+
+type RSSFeed struct {
+	Channel struct {
+		Title       string    `xml:"title"`
+		Link        string    `xml:"link"`
+		Description string    `xml:"description"`
+		Item        []RSSItem `xml:"item"`
+	} `xml:"channel"`
+}
+
+type RSSItem struct {
+	Title       string `xml:"title"`
+	Link        string `xml:"link"`
+	Description string `xml:"description"`
+	PubDate     string `xml:"pubDate"`
+}
+
+func fetchFeed(ctx context.Context, feedURL string) (*RSSFeed, error) {
+	feed := &RSSFeed{}
+	request, err := http.NewRequestWithContext(ctx, "GET", feedURL, nil)
+	if err != nil {
+		return feed, err
+	}
+
+	request.Header.Set("User-Agent", "gator")
+
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return feed, err
+	}
+	defer response.Body.Close()
+
+	responseBytes, err := io.ReadAll(response.Body)
+	if err != nil {
+		return feed, err
+	}
+
+	xml.Unmarshal(responseBytes, feed)
+
+	feed.Channel.Title = html.UnescapeString(feed.Channel.Title)
+	feed.Channel.Description = html.UnescapeString(feed.Channel.Description)
+
+	for i := 0; i < len(feed.Channel.Item); i++ {
+		item := feed.Channel.Item[i]
+		item.Title = html.UnescapeString(item.Title)
+		item.Description = html.UnescapeString(item.Description)
+	}
+
+	return feed, nil
+}
+
+func handlerAggregate(s *state, cmd command) error {
+	feed, err := fetchFeed(s.ctx, "https://www.wagslane.dev/index.xml")
+	if err != nil {
+		log.Fatal("could not fetch feed")
+	}
+
+	fmt.Printf("%v", *feed)
+	return nil
 }
 
 func (c *commands) run(s *state, cmd command) error {
@@ -141,6 +205,7 @@ func main() {
 	cmds.register("register", handlerRegister)
 	cmds.register("reset", handlerReset)
 	cmds.register("users", handlerGetUsers)
+	cmds.register("agg", handlerAggregate)
 
 	// fmt.Printf("current: %v", cfg)
 
