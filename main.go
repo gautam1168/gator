@@ -130,10 +130,23 @@ func handlerAddFeed(s *state, cmd command) error {
 		UserID: user.ID,
 	})
 
-	fmt.Printf("id:%v\nname: %s\nurl: %s\nuser_id:%s\n",
+	fmt.Printf("id:%v\nname: %v\nurl: %v\nuser_id:%v\n",
 		feed.ID, feed.Name, feed.Url, feed.UserID)
 
 	return err
+}
+
+func handlerFeeds(s *state, cmd command) error {
+	feeds, err := s.db.ListFeeds(s.ctx)
+	if err != nil {
+		return err
+	}
+
+	for i := 0; i < len(feeds); i++ {
+		feed := feeds[i]
+		fmt.Printf("%s, %s, %v\n", feed.Name.String, feed.Url.String, feed.UserName)
+	}
+	return nil
 }
 
 func (c *commands) run(s *state, cmd command) error {
@@ -247,6 +260,7 @@ func main() {
 	cmds.register("users", handlerGetUsers)
 	cmds.register("agg", handlerAggregate)
 	cmds.register("addfeed", handlerAddFeed)
+	cmds.register("feeds", handlerFeeds)
 
 	// fmt.Printf("current: %v", cfg)
 
