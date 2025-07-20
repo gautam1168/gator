@@ -87,13 +87,24 @@ func fetchFeed(ctx context.Context, feedURL string) (*RSSFeed, error) {
 }
 
 func handlerAggregate(s *state, cmd command) error {
-	feed, err := fetchFeed(s.ctx, "https://www.wagslane.dev/index.xml")
-	if err != nil {
-		log.Fatal("could not fetch feed")
+	if len(cmd.args) < 1 {
+		log.Fatal("duration must be provided")
 	}
 
-	fmt.Printf("%v", *feed)
-	return nil
+	interval, err := time.ParseDuration(cmd.args[0])
+	if err != nil {
+		log.Fatal("invalid duration provided")
+	}
+
+	fmt.Printf("Collecting feeds every %v\n", interval)
+	ticker := time.NewTicker(interval)
+	for ; ; <-ticker.C {
+		fmt.Printf("scraping next\n")
+		err := scrapeFeeds(s)
+		if err != nil {
+			fmt.Printf("Could not scrape %v\n", err)
+		}
+	}
 }
 
 func handlerAddFeed(s *state, cmd command, user database.User) error {
@@ -326,6 +337,37 @@ func middlewareLoggedIn(
 			return err
 		}
 		return handler(s, cmd, user)
+	}
+}
+
+func scrapeFeeds(s *state) error {
+	feed, err := s.db.GetNextFeedToFetch(s.ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := s.db.MarkFeedFetched(s.ctx, feed.ID); err != nil {
+		return err
+	}
+
+	if feed.Url.Valid {
+		feedContent, err := fetchFeed(s.ctx, feed.Url.String)
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("Feed: %s\n", feedContent.Channel.Title)
+		fmt.Printf("Description: %s\n", feedContent.Channel.Description)
+		fmt.Printf("------------------------------------\n")
+
+		for i := range feedContent.Channel.Item {
+			feedItem := feedContent.Channel.Item[i]
+			fmt.Printf("%v. %s\n", i, feedItem.Title)
+			fmt.Printf("   %s\n\n", feedItem.Description)
+		}
+		return nil
+	} else {
+		return fmt.Errorf("cannot fetch feed that has no url")
 	}
 }
 
