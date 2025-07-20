@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 
 	// "os"
 	"time"
@@ -246,6 +247,38 @@ func handlerFollowing(s *state, cmd command) error {
 	return nil
 }
 
+func handlerBrowse(s *state, cmd command, user database.User) error {
+	limit := 2
+	if len(cmd.args) > 0 {
+		passedLimit, err := strconv.Atoi(cmd.args[0])
+		if err != nil {
+			fmt.Printf("could not parse error: %v\n", err)
+		} else {
+			limit = passedLimit
+		}
+	}
+
+	fmt.Printf("Getting %v feeds for %s: %v\n", limit, user.Name, user.ID)
+
+	posts, err := s.db.GetPostsForUser(s.ctx, database.GetPostsForUserParams{
+		UserID: user.ID,
+		Limit:  int32(limit),
+	})
+
+	fmt.Printf("posts: %v\n", len(posts))
+
+	if err != nil {
+		return err
+	} else {
+		for i := range posts {
+			post := posts[i]
+			fmt.Printf("Title: %s\n", post.Title.String)
+			fmt.Printf("Description: %s\n", post.Description.String)
+		}
+	}
+	return nil
+}
+
 func (c *commands) run(s *state, cmd command) error {
 	if handler, ok := c.registry[cmd.name]; !ok {
 		return fmt.Errorf("invalid command")
@@ -356,14 +389,49 @@ func scrapeFeeds(s *state) error {
 			return err
 		}
 
-		fmt.Printf("Feed: %s\n", feedContent.Channel.Title)
-		fmt.Printf("Description: %s\n", feedContent.Channel.Description)
-		fmt.Printf("------------------------------------\n")
-
+		// fmt.Printf("Feed: %s\n", feedContent.Channel.Title)
+		// fmt.Printf("Description: %s\n", feedContent.Channel.Description)
+		// fmt.Printf("------------------------------------\n")
+		//
+		// for i := range feedContent.Channel.Item {
+		// 	feedItem := feedContent.Channel.Item[i]
+		// 	fmt.Printf("%v. %s\n", i, feedItem.Title)
+		// 	fmt.Printf("   %s\n\n", feedItem.Description)
+		// }
 		for i := range feedContent.Channel.Item {
 			feedItem := feedContent.Channel.Item[i]
-			fmt.Printf("%v. %s\n", i, feedItem.Title)
-			fmt.Printf("   %s\n\n", feedItem.Description)
+			pubDate, err := time.Parse("Tue, 10 Jun 2025 00:00:00 +0000", feedItem.PubDate)
+			if err != nil {
+				pubDate = time.Now()
+			}
+
+			_, err = s.db.CreatePost(s.ctx, database.CreatePostParams{
+				ID: uuid.New(),
+				Title: sql.NullString{
+					Valid:  true,
+					String: feedItem.Title,
+				},
+				Url: sql.NullString{
+					Valid:  true,
+					String: feedItem.Link,
+				},
+				Description: sql.NullString{
+					Valid:  true,
+					String: feedItem.Description,
+				},
+				PublishedAt: sql.NullTime{
+					Valid: true,
+					Time:  pubDate,
+				},
+				FeedID: uuid.NullUUID{
+					Valid: true,
+					UUID:  feed.ID,
+				},
+			})
+
+			if err != nil {
+				fmt.Printf("%v\n", err)
+			}
 		}
 		return nil
 	} else {
@@ -404,6 +472,7 @@ func main() {
 	cmds.register("follow", middlewareLoggedIn(handlerFollow))
 	cmds.register("following", handlerFollowing)
 	cmds.register("unfollow", middlewareLoggedIn(handlerUnfollow))
+	cmds.register("browse", middlewareLoggedIn(handlerBrowse))
 
 	// fmt.Printf("current: %v", cfg)
 
