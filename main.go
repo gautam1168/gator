@@ -96,18 +96,13 @@ func handlerAggregate(s *state, cmd command) error {
 	return nil
 }
 
-func handlerAddFeed(s *state, cmd command) error {
+func handlerAddFeed(s *state, cmd command, user database.User) error {
 	if len(cmd.args) < 2 {
 		log.Fatalf("name and url must be provided")
 	}
 
 	name := cmd.args[0]
 	url := cmd.args[1]
-
-	user, err := s.db.GetUserByName(s.ctx, s.cfg.CurrentUserName)
-	if err != nil {
-		log.Fatal("cannot find the user")
-	}
 
 	feed, err := s.db.AddFeed(s.ctx, database.AddFeedParams{
 		ID: uuid.New(),
@@ -169,14 +164,9 @@ func handlerFeeds(s *state, cmd command) error {
 	return nil
 }
 
-func handlerFollow(s *state, cmd command) error {
+func handlerFollow(s *state, cmd command, user database.User) error {
 	if len(cmd.args) < 1 {
 		log.Fatal("feed url must be provided")
-	}
-
-	user, err := s.db.GetUserByName(s.ctx, s.cfg.CurrentUserName)
-	if err != nil {
-		log.Fatal("cannot find the user")
 	}
 
 	feed, err := s.db.GetFeedByUrl(s.ctx, sql.NullString{
@@ -210,6 +200,24 @@ func handlerFollow(s *state, cmd command) error {
 
 	fmt.Printf("%v", feedFollow)
 
+	return err
+}
+
+func handlerUnfollow(s *state, cmd command, user database.User) error {
+	if len(cmd.args) < 1 {
+		log.Fatal("user and url must be provided")
+	}
+
+	err := s.db.Unfollow(s.ctx, database.UnfollowParams{
+		UserID: uuid.NullUUID{
+			Valid: true,
+			UUID:  user.ID,
+		},
+		Url: sql.NullString{
+			Valid:  true,
+			String: cmd.args[0],
+		},
+	})
 	return err
 }
 
@@ -309,6 +317,18 @@ func handlerGetUsers(s *state, cmd command) error {
 	return nil
 }
 
+func middlewareLoggedIn(
+	handler func(s *state, cmd command, user database.User) error,
+) func(*state, command) error {
+	return func(s *state, cmd command) error {
+		user, err := s.db.GetUserByName(s.ctx, s.cfg.CurrentUserName)
+		if err != nil {
+			return err
+		}
+		return handler(s, cmd, user)
+	}
+}
+
 func main() {
 	cfg, err := config.Read()
 	if err != nil {
@@ -337,10 +357,11 @@ func main() {
 	cmds.register("reset", handlerReset)
 	cmds.register("users", handlerGetUsers)
 	cmds.register("agg", handlerAggregate)
-	cmds.register("addfeed", handlerAddFeed)
 	cmds.register("feeds", handlerFeeds)
-	cmds.register("follow", handlerFollow)
+	cmds.register("addfeed", middlewareLoggedIn(handlerAddFeed))
+	cmds.register("follow", middlewareLoggedIn(handlerFollow))
 	cmds.register("following", handlerFollowing)
+	cmds.register("unfollow", middlewareLoggedIn(handlerUnfollow))
 
 	// fmt.Printf("current: %v", cfg)
 
